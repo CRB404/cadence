@@ -12,13 +12,10 @@ struct TodoListView: View {
 
     private var tailBase: Int { (store.activeIndex ?? -1) + 1 }
 
-    private var firstCompleted: Int {
-        store.items.firstIndex { $0.isComplete } ?? store.items.count
-    }
-
     private var upcomingItems: [TodoItem] {
-        guard tailBase < firstCompleted else { return [] }
-        return Array(store.items[tailBase..<firstCompleted])
+        let end = store.queueEnd
+        guard tailBase < end else { return [] }
+        return Array(store.items[tailBase..<end])
     }
 
     private var doneItems: [TodoItem] {
@@ -33,6 +30,7 @@ struct TodoListView: View {
         VStack(spacing: 8) {
             header
             ActiveBlockView()
+            if !store.suggestions.isEmpty { suggestedCard }
             if hasActive && !upcomingItems.isEmpty { upNextCard }
             if !doneItems.isEmpty { doneCard }
             addField
@@ -97,6 +95,17 @@ struct TodoListView: View {
             VStack(alignment: .leading, spacing: 4) {
                 sectionHeader("Up Next", count: upcomingItems.count) { EmptyView() }
                 upNextList
+            }
+        }
+    }
+
+    private var suggestedCard: some View {
+        Card(padding: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                sectionHeader("Suggested", count: store.suggestions.count) { EmptyView() }
+                VStack(spacing: 0) {
+                    ForEach(store.suggestions) { SuggestionRowView(item: $0) }
+                }
             }
         }
     }

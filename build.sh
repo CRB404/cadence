@@ -50,6 +50,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key>  <string>14.0</string>
     <key>NSHighResolutionCapable</key> <true/>
     <key>LSApplicationCategoryType</key> <string>public.app-category.productivity</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>    <string>Cadence</string>
+            <key>CFBundleURLSchemes</key> <array><string>cadence</string></array>
+        </dict>
+    </array>
 </dict>
 </plist>
 PLIST

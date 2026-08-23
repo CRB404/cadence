@@ -30,9 +30,26 @@ final class TodoStore {
 
     // MARK: - Derived state
 
-    /// Index of the active (first incomplete) item, if any.
+    /// Index of the active (first incomplete, non-suggestion) item, if any.
     var activeIndex: Int? {
-        items.firstIndex { !$0.isComplete }
+        items.firstIndex { !$0.isComplete && !$0.isSuggestion }
+    }
+
+    /// Unreviewed suggestions from Observatory, newest first.
+    var suggestions: [TodoItem] {
+        items.filter { $0.isSuggestion }
+            .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
+    }
+
+    /// Array layout invariant: `[active queue..., completed..., suggestions...]`.
+    /// This is the insertion point at the end of the active queue.
+    var queueEnd: Int {
+        items.firstIndex { $0.isComplete || $0.isSuggestion } ?? items.count
+    }
+
+    /// Insertion point at the end of the Done pile (before any suggestions).
+    private var doneEnd: Int {
+        items.firstIndex { $0.isSuggestion } ?? items.count
     }
 
     var activeItem: TodoItem? {
@@ -79,9 +96,48 @@ final class TodoStore {
         guard !title.isEmpty else { return }
         let item = TodoItem(title: title, durationSeconds: max(60, minutes * 60))
         // Insert above completed tasks so it joins the active queue.
-        let insertAt = items.firstIndex { $0.isComplete } ?? items.count
-        items.insert(item, at: insertAt)
+        items.insert(item, at: queueEnd)
         save()
+    }
+
+    // MARK: - Suggestions (Observatory inbox)
+
+    /// Park a suggested task in the inbox. Never enters the cascade until accepted.
+    /// Deduped on `sourceID`.
+    func addSuggestion(title rawTitle: String, minutes: Int, notes: String?, sourceID: String?, sourceURL: String?) {
+        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        if let sourceID, items.contains(where: { $0.sourceID == sourceID }) { return }
+        var item = TodoItem(title: title, durationSeconds: max(60, minutes * 60))
+        item.isSuggestion = true
+        item.hasStarted = false
+        item.notes = notes?.isEmpty == false ? notes : nil
+        item.sourceID = sourceID
+        item.sourceURL = sourceURL
+        items.append(item)
+        save()
+    }
+
+    /// Move a suggestion into the bottom of the active queue and tell Observatory.
+    func acceptSuggestion(_ id: UUID) {
+        guard let i = items.firstIndex(where: { $0.id == id }), items[i].isSuggestion else { return }
+        var item = items.remove(at: i)
+        item.isSuggestion = false
+        item.hasStarted = false
+        item.isComplete = false
+        item.completedAt = nil
+        item.remainingSeconds = item.durationSeconds
+        items.insert(item, at: queueEnd)
+        save()
+        if let sid = item.sourceID { ObservatoryBridge.report(actionID: sid, status: .accepted) }
+    }
+
+    /// Drop a suggestion and tell Observatory.
+    func dismissSuggestion(_ id: UUID) {
+        guard let i = items.firstIndex(where: { $0.id == id }), items[i].isSuggestion else { return }
+        let item = items.remove(at: i)
+        save()
+        if let sid = item.sourceID { ObservatoryBridge.report(actionID: sid, status: .dismissed) }
     }
 
     func toggleComplete(_ id: UUID) {
@@ -98,15 +154,15 @@ final class TodoStore {
             // completed items contiguous at the end of the array).
             item.isComplete = false
             item.completedAt = nil
-            let insertAt = items.firstIndex { $0.isComplete } ?? items.count
-            items.insert(item, at: insertAt)
+            items.insert(item, at: queueEnd)
         } else {
             // Complete -> stamp the time and sink into the Done pile.
             item.isComplete = true
             item.completedAt = Date()
-            items.append(item)
+            items.insert(item, at: doneEnd)
             // Cascade: finishing the running task auto-starts the next one.
             autoStartNext(after: wasActiveRunning)
+            if let sid = item.sourceID { ObservatoryBridge.report(actionID: sid, status: .done) }
         }
         save()
     }
@@ -138,8 +194,7 @@ final class TodoStore {
         item.hasStarted = false
         item.isComplete = false
         item.completedAt = nil
-        let insertAt = items.firstIndex { $0.isComplete } ?? items.count
-        items.insert(item, at: insertAt)
+        items.insert(item, at: queueEnd)
 
         // Cascade — but only if there's a *different* task to advance to (don't
         // silently restart the same task when it's the only one in the queue).
