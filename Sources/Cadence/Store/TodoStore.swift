@@ -173,6 +173,15 @@ final class TodoStore {
         save()
     }
 
+    /// Wipe the day: the active task, everything in Up Next, and the Done pile.
+    /// Suggestions stay parked in the Observatory inbox (clearing the day
+    /// shouldn't report dismissals upstream).
+    func clearDay() {
+        items.removeAll { !$0.isSuggestion }
+        isOnBreak = false
+        save()
+    }
+
     /// `+5 min` on a fired item: extend and resume.
     func addFiveMinutes(_ id: UUID) {
         guard let i = items.firstIndex(where: { $0.id == id }) else { return }

@@ -7,6 +7,7 @@ import SwiftUI
 struct TodoListView: View {
     @Environment(TodoStore.self) private var store
     @State private var newTitle = ""
+    @State private var confirmingClearDay = false
     @FocusState private var addFocused: Bool
     @AppStorage("appearance") private var appearance = "system"
 
@@ -93,9 +94,25 @@ struct TodoListView: View {
     private var upNextCard: some View {
         Card(padding: 8) {
             VStack(alignment: .leading, spacing: 4) {
-                sectionHeader("Up Next", count: upcomingItems.count) { EmptyView() }
+                sectionHeader("Up Next", count: upcomingItems.count) {
+                    Button("Clear day") { confirmingClearDay = true }
+                        .buttonStyle(.plain)
+                        .font(Typography.keycap)
+                        .foregroundStyle(Palette.accent)
+                        .help("Remove every task — active, upcoming, and done")
+                }
                 upNextList
             }
+        }
+        .confirmationDialog(
+            "Clear the whole day?",
+            isPresented: $confirmingClearDay,
+            titleVisibility: .visible
+        ) {
+            Button("Clear day", role: .destructive) { store.clearDay() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Removes the active task, everything in Up Next, and all completed tasks.")
         }
     }
 
